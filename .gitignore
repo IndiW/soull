@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.soull/
+.cache/
+native/build/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
