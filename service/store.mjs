@@ -1,5 +1,5 @@
-import { DatabaseSync } from 'node:sqlite';
-import { randomUUID } from 'node:crypto';
+import { DatabaseSync } from "node:sqlite";
+import { randomUUID } from "node:crypto";
 
 export function openStore(path) {
   const db = new DatabaseSync(path);
@@ -10,13 +10,92 @@ export function openStore(path) {
     PRAGMA user_version=1;`);
   return {
     db,
-    snapshot() { return { managers: db.prepare('SELECT * FROM managers ORDER BY created').all(), features: db.prepare('SELECT * FROM features ORDER BY created').all(), findings: db.prepare('SELECT * FROM findings ORDER BY created DESC').all() }; },
-    manager(id) { const v = db.prepare('SELECT * FROM managers WHERE id=?').get(id); if (!v) throw Object.assign(new Error('Manager not found'), {status:404}); return v; },
-    feature(id) { const v = db.prepare('SELECT * FROM features WHERE id=?').get(id); if (!v) throw Object.assign(new Error('Feature not found'), {status:404}); return v; },
-    addManager(name, repo, provider) { const v = {id:randomUUID(),name,repo,provider,created:new Date().toISOString()}; db.prepare('INSERT INTO managers VALUES (?,?,?,?,?)').run(v.id,name,repo,provider,v.created); return v; },
-    addFeature(v) { db.prepare('INSERT INTO features VALUES (?,?,?,?,?,?,?,?)').run(v.id,v.managerId,v.title,v.branch,v.workspace,v.base,v.created); return v; },
-    addFinding(featureId,title,body,kind) { this.feature(featureId); const v={id:randomUUID(),featureId,title,body,kind,isRead:0,resolved:0,created:new Date().toISOString()}; db.prepare('INSERT INTO findings VALUES (?,?,?,?,?,?,?,?)').run(v.id,featureId,title,body,kind,0,0,v.created); return v; },
-    updateFinding(id, patch) { if (!db.prepare('SELECT id FROM findings WHERE id=?').get(id)) throw Object.assign(new Error('Finding not found'), {status:404}); for (const key of ['isRead','resolved']) if (typeof patch[key]==='boolean') db.prepare(`UPDATE findings SET ${key}=? WHERE id=?`).run(Number(patch[key]),id); },
-    close() { db.close(); }
+    snapshot() {
+      return {
+        managers: db.prepare("SELECT * FROM managers ORDER BY created").all(),
+        features: db.prepare("SELECT * FROM features ORDER BY created").all(),
+        findings: db
+          .prepare("SELECT * FROM findings ORDER BY created DESC")
+          .all(),
+      };
+    },
+    manager(id) {
+      const v = db.prepare("SELECT * FROM managers WHERE id=?").get(id);
+      if (!v)
+        throw Object.assign(new Error("Manager not found"), { status: 404 });
+      return v;
+    },
+    feature(id) {
+      const v = db.prepare("SELECT * FROM features WHERE id=?").get(id);
+      if (!v)
+        throw Object.assign(new Error("Feature not found"), { status: 404 });
+      return v;
+    },
+    addManager(name, repo, provider) {
+      const v = {
+        id: randomUUID(),
+        name,
+        repo,
+        provider,
+        created: new Date().toISOString(),
+      };
+      db.prepare("INSERT INTO managers VALUES (?,?,?,?,?)").run(
+        v.id,
+        name,
+        repo,
+        provider,
+        v.created,
+      );
+      return v;
+    },
+    addFeature(v) {
+      db.prepare("INSERT INTO features VALUES (?,?,?,?,?,?,?)").run(
+        v.id,
+        v.managerId,
+        v.title,
+        v.branch,
+        v.workspace,
+        v.base,
+        v.created,
+      );
+      return v;
+    },
+    addFinding(featureId, title, body, kind) {
+      this.feature(featureId);
+      const v = {
+        id: randomUUID(),
+        featureId,
+        title,
+        body,
+        kind,
+        isRead: 0,
+        resolved: 0,
+        created: new Date().toISOString(),
+      };
+      db.prepare("INSERT INTO findings VALUES (?,?,?,?,?,?,?,?)").run(
+        v.id,
+        featureId,
+        title,
+        body,
+        kind,
+        0,
+        0,
+        v.created,
+      );
+      return v;
+    },
+    updateFinding(id, patch) {
+      if (!db.prepare("SELECT id FROM findings WHERE id=?").get(id))
+        throw Object.assign(new Error("Finding not found"), { status: 404 });
+      for (const key of ["isRead", "resolved"])
+        if (typeof patch[key] === "boolean")
+          db.prepare(`UPDATE findings SET ${key}=? WHERE id=?`).run(
+            Number(patch[key]),
+            id,
+          );
+    },
+    close() {
+      db.close();
+    },
   };
 }

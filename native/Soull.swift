@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             let project = Bundle.main.object(forInfoDictionaryKey: "SoullProjectRoot") as? String ?? FileManager.default.currentDirectoryPath
             let runtimePath = ProcessInfo.processInfo.environment["SOULL_RUNTIME_FILE"] ?? project + "/.soull/runtime.json"
             let data = try Data(contentsOf: URL(fileURLWithPath: runtimePath))
-            guard let runtime = try JSONSerialization.jsonObject(with: data) as? [String: Any], let base = runtime["url"] as? String, let token = runtime["token"] as? String, let url = URL(string: base), url.scheme == "http", url.host == "127.0.0.1", let port = url.port, let destination = URL(string: base + "/#" + token) else { throw NSError(domain: "Soull", code: 1) }
+            guard let runtime = try JSONSerialization.jsonObject(with: data) as? [String: Any], let base = runtime["url"] as? String, let token = runtime["token"] as? String, let url = URL(string: base), url.scheme == "http", url.host == "127.0.0.1", let port = url.port, let destination = URL(string: base + "/?boot=" + UUID().uuidString + "#" + token) else { throw NSError(domain: "Soull", code: 1) }
             allowedPort = port
             web.load(URLRequest(url: destination))
         } catch {
@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             alert.runModal()
         }
     }
-    @objc func reloadUI() { if web.url == nil { connect() } else { web.reload() } }
+    @objc func reloadUI() { connect() }
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "clipboard", message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.host == "127.0.0.1", message.frameInfo.securityOrigin.port == allowedPort, let text = message.body as? String else { return }
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
