@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   api,
@@ -11,6 +11,7 @@ import {
 import { Robot } from "./Robot";
 import { Terminal } from "./Terminal";
 import { Review } from "./Review";
+import { Conversation } from "./Conversation";
 import "./style.css";
 type Tab = "map" | "conversation" | "terminal" | "review" | "code";
 const empty: State = { managers: [], features: [], findings: [], sessions: [] };
@@ -32,6 +33,7 @@ function App() {
     [inbox, setInbox] = useState(false),
     [dirty, setDirty] = useState(false),
     [copied, setCopied] = useState(false),
+    [selectedFinding, setSelectedFinding] = useState<string | null>(null),
     [copySelection, setCopySelection] = useState(
       localStorage.getItem("soull-copy") !== "false",
     ),
@@ -91,6 +93,7 @@ function App() {
     setInbox(false);
     setTab(next);
     setFileLink(null);
+    setSelectedFinding(null);
   }
   async function submitManager(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -165,15 +168,19 @@ function App() {
     setFeatureId(target.id);
     setInbox(false);
     setTab("conversation");
+    setSelectedFinding(f.id);
     setDirty(false);
     patchFinding(f, { isRead: true });
   }
-  function openFile(path: string, line: number) {
-    if (!allowSwitch()) return;
-    setFileLink({ path, line });
-    setTab("code");
-    setInbox(false);
-  }
+  const openFile = useCallback(
+    (path: string, line: number) => {
+      if (!allowSwitch()) return;
+      setFileLink({ path, line });
+      setTab("code");
+      setInbox(false);
+    },
+    [dirty],
+  );
   if (!token)
     return (
       <div className="locked">
@@ -283,7 +290,7 @@ function App() {
                 localStorage.setItem("soull-copy", String(e.target.checked));
               }}
             />
-            Copy selected briefing text
+            Copy selected conversation text
           </label>
           <span className="local-label">
             <span className="dot green" /> Local workspace
@@ -460,6 +467,7 @@ function App() {
                         setFeatureId(e.target.value);
                         setDirty(false);
                         setFileLink(null);
+                        setSelectedFinding(null);
                       }
                     }}
                   >
@@ -479,7 +487,7 @@ function App() {
               {(
                 [
                   ["map", "◇", "Map"],
-                  ["conversation", "◌", "Briefings"],
+                  ["conversation", "◌", "Conversation"],
                   ["terminal", "›_", "Terminal"],
                   ["review", "◉", "Guided diff"],
                   ["code", "⌘", "Code"],
@@ -527,64 +535,80 @@ function App() {
                 initialFile={fileLink}
               />
             ) : tab === "conversation" ? (
-              <section className="conversation" onMouseUp={copyText}>
-                <div className="briefing-heading">
-                  <Robot name={manager.name} size={48} />
-                  <div>
-                    <h2>{manager.name}’s briefings</h2>
-                    <p className="muted">
-                      Durable findings from your coordinator. Talk to them in
-                      Terminal.
-                    </p>
-                  </div>
-                  <button onClick={() => navigate("terminal")}>
-                    Open terminal ↗
-                  </button>
-                </div>
-                {findings.length ? (
-                  findings.map((f) => (
-                    <article className="finding" key={f.id}>
-                      <div className="finding-meta">
-                        <span>{f.kind}</span>
-                        <time>{new Date(f.created).toLocaleString()}</time>
-                        {!f.isRead && (
-                          <span className="unread-label">Unread</span>
-                        )}
+              <Conversation
+                key={feature.id}
+                feature={feature}
+                manager={manager}
+                openFile={openFile}
+                onCopySelection={copyText}
+                findingFocus={selectedFinding}
+                openTerminal={() => navigate("terminal")}
+                briefings={
+                  <section className="conversation">
+                    <div className="briefing-heading">
+                      <Robot name={manager.name} size={48} />
+                      <div>
+                        <h2>{manager.name}’s briefings</h2>
+                        <p className="muted">
+                          Findings and questions published by your coordinator.
+                        </p>
                       </div>
-                      <h2>{f.title}</h2>
-                      <FindingBody body={f.body} openFile={openFile} />
-                      <div className="finding-actions">
-                        <button
-                          onClick={() => patchFinding(f, { isRead: !f.isRead })}
+                      <button onClick={() => navigate("terminal")}>
+                        Open terminal ↗
+                      </button>
+                    </div>
+                    {findings.length ? (
+                      findings.map((f) => (
+                        <article
+                          className="finding"
+                          key={f.id}
+                          id={"finding-" + f.id}
                         >
-                          {f.isRead ? "Mark unread" : "Mark read"}
-                        </button>
-                        <button
-                          onClick={() =>
-                            patchFinding(f, { resolved: !f.resolved })
-                          }
-                        >
-                          {f.resolved ? "✓ Resolved" : "Resolve"}
+                          <div className="finding-meta">
+                            <span>{f.kind}</span>
+                            <time>{new Date(f.created).toLocaleString()}</time>
+                            {!f.isRead && (
+                              <span className="unread-label">Unread</span>
+                            )}
+                          </div>
+                          <h2>{f.title}</h2>
+                          <FindingBody body={f.body} openFile={openFile} />
+                          <div className="finding-actions">
+                            <button
+                              onClick={() =>
+                                patchFinding(f, { isRead: !f.isRead })
+                              }
+                            >
+                              {f.isRead ? "Mark unread" : "Mark read"}
+                            </button>
+                            <button
+                              onClick={() =>
+                                patchFinding(f, { resolved: !f.resolved })
+                              }
+                            >
+                              {f.resolved ? "✓ Resolved" : "Resolve"}
+                            </button>
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="empty">
+                        <h2>Keep the useful parts.</h2>
+                        <p>
+                          Ask your coordinator to publish a finding with the{" "}
+                          <code>soull</code> CLI.
+                          <br />
+                          It stays here even as the conversation moves on.
+                        </p>
+                        <code>soull help</code>
+                        <button onClick={() => navigate("terminal")}>
+                          Go to terminal
                         </button>
                       </div>
-                    </article>
-                  ))
-                ) : (
-                  <div className="empty">
-                    <h2>Keep the useful parts.</h2>
-                    <p>
-                      Ask your coordinator to publish a finding with the{" "}
-                      <code>soull</code> CLI.
-                      <br />
-                      It stays here even as the conversation moves on.
-                    </p>
-                    <code>soull help</code>
-                    <button onClick={() => navigate("terminal")}>
-                      Go to terminal
-                    </button>
-                  </div>
-                )}
-              </section>
+                    )}
+                  </section>
+                }
+              />
             ) : (
               <section className="map-view">
                 <div className="map-caption">
