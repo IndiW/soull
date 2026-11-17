@@ -51,6 +51,18 @@ If startup or protocol compatibility fails, the turn reports an error; check CLI
 
 Provider references: [Codex App Server](https://learn.chatgpt.com/docs/app-server), [Claude Code headless mode](https://code.claude.com/docs/en/headless), and [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance).
 
+### Guided diff explanations
+
+In Guided diff, choose **Explain changes** to request a change summary and per-file **what changed**, **why**, and **risks & uncertainty**. Generation is manual: use **Regenerate explanation** after changes or **Stop explanation** while running. Save editor changes first; unsaved text is excluded and generation is disabled while the editor is dirty. **Change summary** and **This file** switch the explanation scope. The prose is unverified AI guidance; check inferred rationale and risks against the source.
+
+The manager's selected installed CLI reuses its existing sign-in/configuration in a new isolated provider session, separate from normal Conversation history. Soull does not read tokens or provide a login proxy. Codex requests a `read-only` sandbox with `approvalPolicy: never`; this is not a blanket disable of every tool. Claude Code receives `--tools '' --disallowedTools '*'` to disable built-in and MCP tools ([CLI reference](https://code.claude.com/docs/en/cli-reference)). The prompt asks for description only, and an approval request fails generation without granting access. Existing provider billing choices still apply.
+
+**Revision details** records the diff fingerprint, feature base, full HEAD, provider and capture time. The fingerprint binds the working diff to tracked/untracked file bytes, deletion state and file modes; binary bytes are hashed with their content omitted from the prompt, and symlink target strings are hashed without dereferencing them. The displayed file diff carries its captured revision too. Worktree changes, unsaved edits, unavailable revision checks and read errors are explicit; use **Refresh changes** before comparing an outdated displayed diff. “Matches the last checked worktree” describes the latest check, not a filesystem lock.
+
+Results must provide nonempty what/why/risks prose for the summary and every captured path exactly once; unknown, duplicate or missing paths fail validation. A failed or stopped regeneration preserves the last successful explanation. Jobs, snapshots and successful results live in SQLite across UI reloads; unfinished jobs become interrupted after service restart and are never replayed automatically. **Discuss with manager** opens a Conversation draft containing revision and AI context, appending to any existing draft. It does not send the message.
+
+Current capture limits: 100 changed files, 1 MiB per regular file, 2 MiB combined file reads, 160,000 bytes of diff and 180,000 bytes of serialized snapshot. Requests time out after five minutes and replies are limited to 100,000 characters. Large or unreadable changes report an error rather than a partial explanation. Implementation: [snapshot/jobs and validation](service/reviews.mjs), [provider settings](service/providers.mjs), [diff revision API](service/server.mjs), and [explanation UI](ui/Explanation.tsx).
+
 ### Publish a finding
 
 Workspace terminals include the `soull` command, `SOULL_FEATURE_ID`, and a reference to the local service. A coordinator can run:
@@ -75,7 +87,7 @@ For **service** changes, stop sessions first, then:
 npm run dev -- --restart-service
 ```
 
-This refuses to restart while terminal sessions or conversation turns are active. Restarting the service ends PTYs; SQLite records survive. Interrupted conversation requests are retained and never replayed automatically. Reload the native interface afterward to refresh its local authentication token. In the browser, rerun `node bin/soull.mjs open`.
+This refuses to restart while terminal sessions, conversation turns or explanations are active. Restarting the service ends PTYs; SQLite records survive. Interrupted conversation and explanation requests are retained and never replayed automatically. Reload the native interface afterward to refresh its local authentication token. In the browser, rerun `node bin/soull.mjs open`.
 
 `npm run dev` watches and rebuilds; it does not yet auto-refresh the webview or preserve terminal scroll position exactly. Agent TUI content replays from a bounded in-memory buffer on reconnect. The service owns PTYs until stopped, not across machine/service restarts. To stop it after closing all sessions, terminate the PID recorded in `.soull/runtime.json`. Closing the window or UI watcher intentionally leaves the service running.
 
@@ -95,9 +107,11 @@ Browser checks are separate and use synthetic conversation fixtures in an epheme
 ```sh
 npx playwright install chromium
 npm run test:browser
+# Guided diff fixture can also be run directly:
+node tests/browser/reviews.mjs
 ```
 
-Alternatively set `SOULL_BROWSER_BINARY` to an installed Chromium binary. The check covers Markdown, streamed replies, queued follow-ups, Stop, draft recovery, multi-page reading-anchor restoration and desktop/compact layout. Local screenshots go in `.impeccable/review/` and are ignored by Git.
+Alternatively set `SOULL_BROWSER_BINARY` to an installed Chromium binary. Conversation checks cover Markdown, streamed replies, queued follow-ups, Stop, draft recovery, multi-page reading-anchor restoration and desktop/compact layout. The Guided diff fixture covers generation, per-file guidance, deleted files, unsaved edit guards, staleness, regeneration, reload, failed-output recovery and revision context in preserved Conversation drafts. [Review unit/service tests](tests/reviews.test.mjs) cover snapshot fingerprints, schema validation, cancellation and durable recovery; [provider tests](tests/providers.test.mjs) exercise synthetic transports. These fixtures do not validate real signed-in subscription inference. Local screenshots go in `.impeccable/review/` and are ignored by Git.
 
 Before relying on subscription-backed work on your Mac, sign in to each CLI, send a message and follow-up through a manager configured for that provider, reload during a reply, and exercise its permission flow. These live checks remain outstanding.
 
@@ -121,7 +135,7 @@ The local service binds only `127.0.0.1`, rejects mismatched Host/Origin headers
 - [Initial design reference](docs/design/initial-review.png), generated concept originally titled Soul
 - [Project-local Unslop skill](.agents/skills/unslop/SKILL.md), by Damir Sokolovsky, CC BY 4.0
 
-Guided diffs are about **reducing cognitive load and maximizing clarity**. This slice provides actual working diffs, category grouping, editable source and session-only reviewed markers. PR descriptions, logical flow ordering, AI explanations, revision-bound test evidence, GitHub synchronization, usage reporting, environment/secret integration, workflow editing and safe merge cleanup are intentionally not presented as complete. The Map currently shows manager-owned features; dependency edges and layout editing are deferred. Briefings collect structured findings alongside feature-scoped manager conversations. Terminal remains available for interactive provider sessions and unsupported interactions.
+Guided diffs are about **reducing cognitive load and maximizing clarity**. This slice provides actual working diffs, category grouping, editable source and session-only reviewed markers. GitHub PR descriptions, logical flow ordering, revision-bound test evidence and per-file test/coverage mapping, GitHub synchronization, usage reporting, environment/secret integration, workflow editing and safe merge cleanup are intentionally not presented as complete. The Map currently shows manager-owned features; dependency edges and layout editing are deferred. Briefings collect structured findings alongside feature-scoped manager conversations. Terminal remains available for interactive provider sessions and unsupported interactions.
 
 ## GitHub setup
 

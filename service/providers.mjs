@@ -47,6 +47,7 @@ export function providerRun({
   env,
   emit,
   spawnProcess = spawn,
+  readOnly = false,
 }) {
   let child,
     done = false,
@@ -248,8 +249,8 @@ export function providerRun({
         write({ method: "initialized", params: {} });
         const options = {
           cwd: feature.workspace,
-          approvalPolicy: "on-request",
-          sandbox: "workspace-write",
+          approvalPolicy: readOnly ? "never" : "on-request",
+          sandbox: readOnly ? "read-only" : "workspace-write",
           developerInstructions: instructions(manager.name),
         };
         const thread = await rpc(
@@ -276,6 +277,7 @@ export function providerRun({
         "--append-system-prompt",
         instructions(manager.name),
       ];
+      if (readOnly) args.push("--tools", "", "--disallowedTools", "*");
       if (sessionId) args.push("--resume", sessionId);
       launch("claude", args);
       let messageId = "",

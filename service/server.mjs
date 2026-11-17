@@ -14,6 +14,7 @@ import {
 } from "./workspace.mjs";
 import { Sessions } from "./sessions.mjs";
 import { Conversations } from "./conversations.mjs";
+import { Reviews, reviewSnapshot } from "./reviews.mjs";
 const project = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 export const fail = (message, status = 400) =>
   Object.assign(new Error(message), { status });
@@ -44,6 +45,7 @@ export async function startServer({
   dataDir = process.env.SOULL_DATA_DIR || path.join(project, ".soull"),
   port = Number(process.env.SOULL_PORT || 4317),
   makeChatRun,
+  makeReviewRun,
 } = {}) {
   dataDir = path.resolve(dataDir);
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
@@ -51,7 +53,8 @@ export async function startServer({
     token = randomBytes(32).toString("hex"),
     runtimeFile = path.join(dataDir, "runtime.json"),
     sessions = new Sessions(runtimeFile),
-    conversations = new Conversations(store, runtimeFile, makeChatRun);
+    conversations = new Conversations(store, runtimeFile, makeChatRun),
+    reviews = new Reviews(store, makeReviewRun);
   const operations = new Set();
   let actualPort;
   const send = (res, status, data) => {
@@ -83,14 +86,30 @@ export async function startServer({
           return send(res, 200, {
             ...store.snapshot(),
             sessions: sessions.list(),
-            activeChats: conversations.chat.activeCount(),
+            activeChats:
+              conversations.chat.activeCount() + reviews.running.size,
             capabilities: {
               usage: false,
               github: false,
-              guidedExplanations: false,
+              guidedExplanations: true,
               terminal: "xterm",
             },
           });
+        if (parts[1] === "features" && parts[3] === "review") {
+          const feature = store.feature(parts[2]);
+          if (method === "GET" && parts.length === 4)
+            return send(res, 200, await reviews.state(feature.id));
+          if (method === "POST" && parts.length === 4)
+            return send(res, 202, await reviews.start(feature.id));
+          if (
+            method === "POST" &&
+            parts.length === 5 &&
+            parts[4] === "cancel"
+          ) {
+            reviews.cancel(feature.id);
+            return send(res, 200, { ok: true });
+          }
+        }
         if (parts[1] === "features" && parts[3] === "conversation") {
           const feature = store.feature(parts[2]);
           if (method === "GET" && parts.length === 4) {
@@ -216,15 +235,33 @@ export async function startServer({
             action = parts[3];
           if (method === "GET" && action === "changes")
             return send(res, 200, await changes(feature));
-          if (method === "GET" && action === "diff")
-            return send(
-              res,
-              200,
-              await fileDiff(
-                feature,
-                text(url.searchParams.get("path"), "file path", 4096),
-              ),
+          if (method === "GET" && action === "diff") {
+            const before = await reviewSnapshot(feature).catch(() => null);
+            const result = await fileDiff(
+              feature,
+              text(url.searchParams.get("path"), "file path", 4096),
             );
+            const after = before
+              ? await reviewSnapshot(feature).catch(() => null)
+              : null;
+            if (before && before.revision !== after?.revision)
+              throw fail(
+                "Files changed while opening this diff. Refresh and try again.",
+                409,
+              );
+            return send(res, 200, {
+              ...result,
+              revision: after?.revision || null,
+              ...(after
+                ? {
+                    readable:
+                      after.files.find(
+                        (f) => f.path === url.searchParams.get("path"),
+                      )?.kind === "text",
+                  }
+                : {}),
+            });
+          }
           if (method === "GET" && action === "files")
             return send(res, 200, {
               files: [
@@ -370,10 +407,12 @@ export async function startServer({
     store,
     sessions,
     conversations,
+    reviews,
     url,
     token,
     runtimeFile,
     async close() {
+      reviews.close();
       conversations.close();
       sessions.close();
       await new Promise((resolve) => server.close(resolve));

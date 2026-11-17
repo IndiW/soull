@@ -1,6 +1,13 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { realpath, readFile, writeFile, stat } from "node:fs/promises";
+import {
+  realpath,
+  readFile,
+  writeFile,
+  stat,
+  lstat,
+  readlink,
+} from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 const exec = promisify(execFile);
@@ -152,14 +159,44 @@ export async function fileDiff(feature, relative) {
       status: 404,
     });
   if (all.files.find((f) => f.path === relative)?.untracked) {
-    const file = await readText(feature.workspace, relative);
+    const root = await realpath(feature.workspace),
+      target = path.resolve(root, relative);
+    const parent = await realpath(path.dirname(target)),
+      parentRelative = path.relative(root, parent);
+    if (
+      parentRelative === ".." ||
+      parentRelative.startsWith(".." + path.sep) ||
+      path.isAbsolute(parentRelative)
+    )
+      throw Object.assign(new Error("File is outside the workspace"), {
+        status: 403,
+      });
+    const info = await lstat(target);
+    if (info.isSymbolicLink())
+      return {
+        diff: `New symbolic link: ${relative}\nSymbolic link target: ${await readlink(target)}`,
+        readable: false,
+      };
+    if (!info.isFile() || info.size > 1024 * 1024)
+      return {
+        diff: `New file: ${relative}\nContents exceed the text viewer limit or are not a regular file.`,
+        readable: false,
+      };
+    const bytes = await readFile(await safeFile(feature.workspace, relative));
+    if (bytes.includes(0))
+      return {
+        diff: `New binary file: ${relative}\nBinary contents not shown (${bytes.length} bytes).`,
+        readable: false,
+      };
     return {
       diff:
         `New file: ${relative}\n` +
-        file.content
+        bytes
+          .toString("utf8")
           .split("\n")
           .map((l) => "+" + l)
           .join("\n"),
+      readable: true,
     };
   }
   return {
