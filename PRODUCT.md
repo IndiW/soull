@@ -57,6 +57,10 @@ The goal is reduced cognitive load and maximum clarity, not merely a syntax-colo
 
 Explanations identify the exact revision/diff they describe and become stale when it changes. Related tests identify the basis of association (explicit, coverage, import, naming, or AI inference), source (local/CI), revision, time, and passed/failed/skipped/not run/stale state. A passing test suite is not proof of file coverage. AI ordering is a suggested reading order, not a proven dependency graph.
 
+The implemented explanation slice is manual: Explain changes, Regenerate explanation and Stop explanation. It provides a revision-bound AI summary and per-file what/why/risks, with explicit stale, unsaved and read-error states. It preserves the last successful result after failure and durable job records across reloads; service recovery interrupts unfinished work without replay. Discuss with manager prepares a revision-aware Conversation draft and preserves existing draft text; sending remains explicit. Explanation prose is unverified guidance, not test evidence. Provider execution uses a fresh isolated session with the installed CLI's sign-in, separate from normal chat. Capture and response limits are documented in README.md.
+
+GitHub PR descriptions, logical reading order, test evidence and per-file test/coverage associations remain deferred. The existing category grouping, editable source and session-only reviewed markers remain available.
+
 ### GitHub, workflows, environments
 
 GitHub issues, PR descriptions, review/check state and merges are first-class records. Keep agent-reported readiness distinct from GitHub evidence. Visual workflows inspect implementation, tests, independent review, revision and readiness. Start with definitions plus an inspector before a full node editor.
@@ -77,7 +81,7 @@ Create a manager attached to a local repository, create a feature and isolated g
 
 ### Deferred
 
-Full Guided diff intelligence, plan accounting, GitHub sync, automatic merge cleanup, graphical workflow editing, environment/secret providers, graph editing, richer provider interactions and conversation virtualization, and production packaging are follow-on slices. First-slice limitations must be visible and documented.
+Remaining Guided diff intelligence (logical ordering and test evidence/coverage mapping), plan accounting, GitHub sync, automatic merge cleanup, graphical workflow editing, environment/secret providers, graph editing, richer provider interactions and conversation virtualization, and production packaging are follow-on slices. First-slice limitations must be visible and documented.
 
 ## References
 

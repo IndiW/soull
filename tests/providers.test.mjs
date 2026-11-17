@@ -4,7 +4,7 @@ import { PassThrough, Writable } from "node:stream";
 import { EventEmitter } from "node:events";
 import { providerRun, jsonLines } from "../service/providers.mjs";
 
-function harness(provider, sessionId) {
+function harness(provider, sessionId, extra = {}) {
   const events = [],
     sent = [];
   let child, args;
@@ -44,6 +44,7 @@ function harness(provider, sessionId) {
     env: { PATH: "/bin" },
     emit: (e) => events.push(e),
     spawnProcess,
+    ...extra,
   });
   return {
     run,
@@ -238,4 +239,26 @@ test("Stop kills a tool descendant even when its provider parent exits first", a
     } catch {}
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("explanation requests use read-only Codex and disable Claude built-in/MCP tools", async () => {
+  const codex = harness("codex", null, { readOnly: true });
+  await codex.run.start("Explain this captured diff");
+  const params = codex.sent.find((m) => m.method === "thread/start").params;
+  assert.equal(params.sandbox, "read-only");
+  assert.equal(params.approvalPolicy, "never");
+  codex.output({
+    method: "turn/completed",
+    params: { turn: { status: "completed" } },
+  });
+  codex.child.emit("close", 0);
+  const claude = harness("claude", null, { readOnly: true });
+  await claude.run.start("Explain this captured diff");
+  assert.equal(claude.args.argv[claude.args.argv.indexOf("--tools") + 1], "");
+  assert.equal(
+    claude.args.argv[claude.args.argv.indexOf("--disallowedTools") + 1],
+    "*",
+  );
+  claude.output({ type: "result", is_error: false, result: "{}" });
+  claude.child.emit("close", 0);
 });

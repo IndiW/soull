@@ -533,6 +533,16 @@ function App() {
                 onError={report}
                 onDirty={setDirty}
                 initialFile={fileLink}
+                onDiscuss={(prompt) => {
+                  if (!allowSwitch()) return;
+                  const key = "soull-chat-" + feature.id + "-draft";
+                  const existing = localStorage.getItem(key);
+                  localStorage.setItem(
+                    key,
+                    existing ? existing + "\n\n" + prompt : prompt,
+                  );
+                  navigate("conversation");
+                }}
               />
             ) : tab === "conversation" ? (
               <Conversation

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
-import { api, type Feature, type Changes, type ChangedFile } from "./api";
+import { api, type Feature, type Changes } from "./api";
+import { Explanation } from "./Explanation";
 type FileContent = { path: string; content: string; version: string };
 export function Review({
   feature,
@@ -7,17 +8,21 @@ export function Review({
   onError,
   onDirty,
   initialFile,
+  onDiscuss,
 }: {
   feature: Feature;
   mode: "review" | "code";
   onError: (e: unknown) => void;
   onDirty: (dirty: boolean) => void;
+  onDiscuss: (prompt: string) => void;
   initialFile?: { path: string; line: number } | null;
 }) {
   const [changes, setChanges] = useState<Changes | null>(null),
+    [refreshKey, setRefreshKey] = useState(0),
     [files, setFiles] = useState<string[]>([]),
     [selected, setSelected] = useState(""),
     [diff, setDiff] = useState(""),
+    [diffRevision, setDiffRevision] = useState<string | null>(null),
     [file, setFile] = useState<FileContent | null>(null),
     [draft, setDraft] = useState(""),
     [editing, setEditing] = useState(mode === "code"),
@@ -26,8 +31,11 @@ export function Review({
     [saving, setSaving] = useState(false),
     [reviewed, setReviewed] = useState<Record<string, string>>({});
   const editor = useRef<HTMLTextAreaElement>(null);
+  const selectedRef = useRef("");
+  const dirtyRef = useRef(false);
   const generation = useRef(0),
     dirty = !!file && draft !== file.content;
+  dirtyRef.current = dirty;
   useEffect(() => {
     onDirty(dirty);
     return () => onDirty(false);
@@ -39,7 +47,28 @@ export function Review({
         api<{ files: string[] }>("/features/" + feature.id + "/files"),
       ]);
       setChanges(data);
+      setRefreshKey((k) => k + 1);
       setFiles(tree.files);
+      const currentPath = selectedRef.current,
+        sequence = generation.current;
+      if (currentPath && !dirtyRef.current) {
+        if (data.files.some((f) => f.path === currentPath)) {
+          const result = await api<{
+            diff: string;
+            revision: string | null;
+            readable?: boolean;
+          }>(
+            "/features/" +
+              feature.id +
+              "/diff?path=" +
+              encodeURIComponent(currentPath),
+          );
+          if (sequence === generation.current) {
+            setDiff(result.diff);
+            setDiffRevision(result.revision);
+          }
+        } else setDiff("");
+      }
       return data;
     } catch (e) {
       onError(e);
@@ -82,19 +111,33 @@ export function Review({
       return;
     const sequence = ++generation.current;
     setSelected(relative);
+    selectedRef.current = relative;
     setLoading(true);
     setSaved(false);
     setFile(null);
     setDiff("");
+    setDiffRevision(null);
     try {
       if (changes?.files.some((f) => f.path === relative)) {
-        const result = await api<{ diff: string }>(
+        const result = await api<{
+          diff: string;
+          revision: string | null;
+          readable?: boolean;
+        }>(
           "/features/" +
             feature.id +
             "/diff?path=" +
             encodeURIComponent(relative),
         );
-        if (sequence === generation.current) setDiff(result.diff);
+        if (sequence === generation.current) {
+          setDiff(result.diff);
+          setDiffRevision(result.revision);
+        }
+        if (
+          result.readable === false ||
+          /^deleted file mode /m.test(result.diff)
+        )
+          return;
       }
       const data = await api<FileContent>(
         "/features/" +
@@ -124,13 +167,18 @@ export function Review({
       setFile(data);
       setSaved(true);
       await refresh();
-      const result = await api<{ diff: string }>(
+      const result = await api<{
+        diff: string;
+        revision: string | null;
+        readable?: boolean;
+      }>(
         "/features/" +
           feature.id +
           "/diff?path=" +
           encodeURIComponent(selected),
       );
       setDiff(result.diff);
+      setDiffRevision(result.revision);
     } catch (e) {
       onError(e);
     } finally {
@@ -204,17 +252,29 @@ export function Review({
         )}
       </aside>
       <div className="review-main">
-        <div className="review-summary">
-          <span className="eyebrow">
-            {mode === "code" ? "SOURCE EDITOR" : "WORKING CHANGE"}
-          </span>
-          <h2>{feature.title}</h2>
-          <p className="muted">
-            {mode === "code"
-              ? "Edit text files inside this feature’s isolated worktree."
-              : "A first step toward Guided diffs. PR descriptions, AI explanations, and test evidence are not connected yet."}
-          </p>
-        </div>
+        {mode === "code" && (
+          <div className="review-summary">
+            <span className="eyebrow">
+              {mode === "code" ? "SOURCE EDITOR" : "WORKING CHANGE"}
+            </span>
+            <h2>{feature.title}</h2>
+            <p className="muted">
+              {mode === "code"
+                ? "Edit text files inside this feature’s isolated worktree."
+                : "Review the working diff with revision-bound AI guidance."}
+            </p>
+          </div>
+        )}
+        {mode === "review" && (
+          <Explanation
+            featureId={feature.id}
+            selected={selected}
+            dirty={dirty}
+            refreshKey={refreshKey}
+            diffRevision={diffRevision}
+            discuss={onDiscuss}
+          />
+        )}
         {selected ? (
           <>
             <div className="editor-toolbar">

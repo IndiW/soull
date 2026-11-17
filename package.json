@@ -18,7 +18,7 @@
     "test": "node --test tests/*.test.mjs",
     "native:build": "sh scripts/build-native.sh",
     "native": "open native/build/SoullDev.app",
-    "test:browser": "node tests/browser/conversations.mjs"
+    "test:browser": "node tests/browser/conversations.mjs && node tests/browser/reviews.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",
