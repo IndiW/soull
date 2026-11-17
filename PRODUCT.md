@@ -49,7 +49,7 @@ Dark manager roster with names and minimalist robot avatars. An interactive proj
 
 Prompt routing expresses Continue, Delegate, or Investigate intent. Codex/Claude Code own subagent orchestration. Soull tools communicate structured results to the application; instructions alone do not guarantee delivery or enforce runtime permissions.
 
-Conversations support outcome-first hierarchy, expandable evidence, multiple outstanding prompts, unread boundaries, remembered drafts/scroll, internal file links to the correct worktree and line, and copy-on-selection. Terminal rendering can only support the interactions its provider exposes; do not promise rich conversation behavior from raw PTY output.
+Feature-scoped manager conversations use installed Codex App Server or Claude Code streaming print mode, with durable turns and provider session continuation. They support outcome-first hierarchy, expandable evidence, multiple outstanding prompts, explicit read/unread markers, remembered browser-local drafts and reading position, internal file links to the correct worktree and line, and copy-on-selection. Terminal rendering can only support the interactions its provider exposes; do not promise rich conversation behavior from raw PTY output.
 
 ### Guided diffs
 
@@ -77,7 +77,7 @@ Create a manager attached to a local repository, create a feature and isolated g
 
 ### Deferred
 
-Full Guided diff intelligence, plan accounting, GitHub sync, automatic merge cleanup, graphical workflow editing, environment/secret providers, graph editing, complete rich conversations, and production packaging are follow-on slices. First-slice limitations must be visible and documented.
+Full Guided diff intelligence, plan accounting, GitHub sync, automatic merge cleanup, graphical workflow editing, environment/secret providers, graph editing, richer provider interactions and conversation virtualization, and production packaging are follow-on slices. First-slice limitations must be visible and documented.
 
 ## References
 

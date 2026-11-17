@@ -13,6 +13,7 @@ import {
   saveText,
 } from "./workspace.mjs";
 import { Sessions } from "./sessions.mjs";
+import { Conversations } from "./conversations.mjs";
 const project = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 export const fail = (message, status = 400) =>
   Object.assign(new Error(message), { status });
@@ -42,13 +43,15 @@ async function body(req) {
 export async function startServer({
   dataDir = process.env.SOULL_DATA_DIR || path.join(project, ".soull"),
   port = Number(process.env.SOULL_PORT || 4317),
+  makeChatRun,
 } = {}) {
   dataDir = path.resolve(dataDir);
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
   const store = openStore(path.join(dataDir, "soull.sqlite")),
     token = randomBytes(32).toString("hex"),
     runtimeFile = path.join(dataDir, "runtime.json"),
-    sessions = new Sessions(runtimeFile);
+    sessions = new Sessions(runtimeFile),
+    conversations = new Conversations(store, runtimeFile, makeChatRun);
   const operations = new Set();
   let actualPort;
   const send = (res, status, data) => {
@@ -80,6 +83,7 @@ export async function startServer({
           return send(res, 200, {
             ...store.snapshot(),
             sessions: sessions.list(),
+            activeChats: conversations.chat.activeCount(),
             capabilities: {
               usage: false,
               github: false,
@@ -87,6 +91,50 @@ export async function startServer({
               terminal: "xterm",
             },
           });
+        if (parts[1] === "features" && parts[3] === "conversation") {
+          const feature = store.feature(parts[2]);
+          if (method === "GET" && parts.length === 4) {
+            const after = Number(url.searchParams.get("after") || 0),
+              before = Number(url.searchParams.get("before") || 0);
+            if (
+              ![after, before].every((v) => Number.isSafeInteger(v) && v >= 0)
+            )
+              throw fail("Invalid conversation cursor");
+            return send(
+              res,
+              200,
+              conversations.chat.page(feature.id, { after, before }),
+            );
+          }
+          if (method === "POST" && parts.length === 4) {
+            const b = await body(req);
+            return send(
+              res,
+              202,
+              conversations.send(
+                feature.id,
+                text(b.prompt, "message", 30000),
+                text(b.requestId, "request ID", 100),
+              ),
+            );
+          }
+          if (method === "POST" && parts.length === 6) {
+            if (parts[5] === "cancel") {
+              conversations.cancel(feature.id, parts[4]);
+              return send(res, 200, { ok: true });
+            }
+            if (parts[5] === "approval") {
+              const b = await body(req);
+              conversations.respond(
+                feature.id,
+                parts[4],
+                text(b.requestId, "approval ID"),
+                b.decision,
+              );
+              return send(res, 200, { ok: true });
+            }
+          }
+        }
         if (method === "POST" && url.pathname === "/api/managers") {
           const b = await body(req),
             name = text(b.name, "manager name", 60),
@@ -321,10 +369,12 @@ export async function startServer({
     server,
     store,
     sessions,
+    conversations,
     url,
     token,
     runtimeFile,
     async close() {
+      conversations.close();
       sessions.close();
       await new Promise((resolve) => server.close(resolve));
       store.close();

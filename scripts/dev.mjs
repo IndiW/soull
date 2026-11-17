@@ -1,13 +1,18 @@
 import { context } from "esbuild";
 import { options } from "./build.mjs";
-import { readFile, mkdir, open } from "node:fs/promises";
+import { readFile, mkdir, open, readdir } from "node:fs/promises";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 if (process.argv.includes("--verify")) {
   try {
     const result = await promisify(execFile)(
       process.execPath,
-      ["--test", "tests/integration.test.mjs"],
+      [
+        "--test",
+        ...(await readdir("tests"))
+          .filter((name) => name.endsWith(".test.mjs"))
+          .map((name) => "tests/" + name),
+      ],
       { cwd: process.cwd(), maxBuffer: 4 * 1024 * 1024 },
     );
     console.log(result.stdout);
@@ -34,14 +39,20 @@ if (process.argv.includes("--restart-service")) {
     });
     if (response.ok) {
       const state = await response.json();
-      if (state.sessions.some((s) => s.state === "running"))
-        throw new Error("Stop running sessions before restarting the service.");
+      if (
+        state.activeChats ||
+        state.sessions.some((s) => s.state === "running")
+      )
+        throw new Error(
+          "Stop running sessions and conversation turns before restarting the service.",
+        );
       process.kill(runtime.pid, "SIGTERM");
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
   } catch (error) {
     if (
-      error.message === "Stop running sessions before restarting the service."
+      error.message ===
+      "Stop running sessions and conversation turns before restarting the service."
     )
       throw error;
   }
