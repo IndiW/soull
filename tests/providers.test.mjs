@@ -262,3 +262,68 @@ test("explanation requests use read-only Codex and disable Claude built-in/MCP t
   claude.output({ type: "result", is_error: false, result: "{}" });
   claude.child.emit("close", 0);
 });
+
+test("native decision requests are structured events, never fabricated user answers", async () => {
+  const events = [];
+  const c = harness("codex", null, {
+    emit: (event) => {
+      events.push(event);
+      return event.type === "question"
+        ? { ids: ["question-1"], taskId: "task-1" }
+        : undefined;
+    },
+  });
+  await c.run.start("Coordinate work");
+  c.output({
+    id: 90,
+    method: "item/tool/requestUserInput",
+    params: {
+      questions: [
+        {
+          id: "q",
+          header: "Storage",
+          question: "Choose a database?",
+          options: [{ label: "SQLite", description: "Local first" }],
+        },
+      ],
+    },
+  });
+  assert.equal(events.at(-1).type, "question");
+  assert.equal(c.sent.at(-1).error.code, -32000);
+  assert.match(c.sent.at(-1).error.message, /This is not a user answer/);
+  assert.equal("result" in c.sent.at(-1), false);
+  c.output({
+    method: "turn/completed",
+    params: { turn: { status: "completed" } },
+  });
+  c.child.emit("close", 0);
+  const claude = harness("claude");
+  await claude.run.start("Coordinate other work");
+  claude.output({
+    type: "assistant",
+    parent_tool_use_id: "developer",
+    message: {
+      id: "child",
+      content: [
+        {
+          type: "tool_use",
+          id: "ask",
+          name: "AskUserQuestion",
+          input: {
+            questions: [
+              { header: "Rollout", question: "Which window?", options: [] },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(claude.events.at(-1).type, "question");
+  assert.equal(claude.events.at(-1).requestId, "ask");
+  claude.output({
+    type: "result",
+    is_error: false,
+    result: "Decision is pending.",
+  });
+  claude.child.emit("close", 0);
+});

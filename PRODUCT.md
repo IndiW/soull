@@ -42,6 +42,7 @@ Clear hierarchy, comfortable prose, keyboard access, visible focus, explicit sta
 - Developer/session: temporary provider execution coordinated by the manager; not a user chat destination.
 - Workspace: worktree, branch, environment profile, running processes, editor state. A feature can need multiple sessions.
 - Attention item: answer, decision, manual follow-up, finding, or PR-ready notification, with separate read and resolution state.
+- Task question: a durable decision routed to an owning task, with attention stage, versioned answers and explicit agent acknowledgment. Task records are routing records, not an autonomous execution scheduler.
 
 ### Core experience
 
@@ -50,6 +51,16 @@ Dark manager roster with names and minimalist robot avatars. An interactive proj
 Prompt routing expresses Continue, Delegate, or Investigate intent. Codex/Claude Code own subagent orchestration. Soull tools communicate structured results to the application; instructions alone do not guarantee delivery or enforce runtime permissions.
 
 Feature-scoped manager conversations use installed Codex App Server or Claude Code streaming print mode, with durable turns and provider session continuation. They support outcome-first hierarchy, expandable evidence, multiple outstanding prompts, explicit read/unread markers, remembered browser-local drafts and reading position, internal file links to the correct worktree and line, and copy-on-selection. Terminal rendering can only support the interactions its provider exposes; do not promise rich conversation behavior from raw PTY output.
+
+### Needs you
+
+A manager-wide tray collects task questions across features, grouped as Waiting on you, Can continue and Needed later. Choices, recommendations and bounded context support quick decisions; a custom reply remains available. Read state is independent of resolution. Per-question discussion uses an isolated read-only provider session and never submits a decision; answer and discussion drafts survive UI reloads in browser-local storage.
+
+Open → Answered → Applied separates user submission from agent receipt/use. Answers enter a durable task mailbox independently of the main chat queue; submission starts no automatic model call. Only the owning task’s acknowledgment of the exact current answer version marks Applied, an agent declaration rather than execution proof. Preserve immutable answer versions, reject stale revisions and wrong-task acknowledgments, and keep repeated submissions idempotent.
+
+Deferral by time or exact task milestone postpones attention without resolution. Support explicit dismissal, reopening and paged Applied/dismissed history. Retain questions and discussions in SQLite across service restarts. Preserve earlier question findings when adopting them; prior resolution means dismissed, not Applied.
+
+Existing manager turns remain serialized per feature. Provider instructions encourage native subagent delegation and ask managers to publish questions then continue or finish rather than wait. Workers read task mailboxes and acknowledge received/used versions; pending-answer metadata helps the next manager turn coordinate delivery. Native structured decision requests feed the same records where supported, with an explicit CLI fallback. These records do not make all task execution nonblocking or add a worker scheduler.
 
 ### Guided diffs
 

@@ -9,15 +9,24 @@ const limitText = (value) => String(value || "").slice(0, 100_000);
 export class Conversations {
   running = new Map();
   closed = false;
-  constructor(store, runtimeFile, makeRun = providerRun) {
+  constructor(store, runtimeFile, makeRun = providerRun, options = {}) {
     this.store = store;
     this.runtimeFile = runtimeFile;
     this.makeRun = makeRun;
-    this.chat = new ChatStore(store.db);
+    this.options = options;
+    this.chat = new ChatStore(store.db, options.namespace || "");
+  }
+  scope(id) {
+    if (this.options.resolveScope) return this.options.resolveScope(id);
+    const feature = this.store.feature(id);
+    return {
+      feature,
+      manager: this.store.manager(feature.managerId),
+      context: this.options.contextForFeature?.(feature) || "",
+    };
   }
   send(featureId, prompt, requestId) {
-    const feature = this.store.feature(featureId),
-      manager = this.store.manager(feature.managerId);
+    const { manager } = this.scope(featureId);
     const existing = this.chat.existing(featureId, requestId);
     if (existing) return existing;
     if (this.chat.queued(featureId).length >= 8)
@@ -33,9 +42,14 @@ export class Conversations {
     if (this.closed || this.running.has(featureId)) return;
     const next = this.chat.queued(featureId)[0];
     if (!next) return;
-    const turn = this.chat.get(next.id),
-      feature = this.store.feature(featureId),
-      manager = this.store.manager(feature.managerId);
+    const turn = this.chat.get(next.id);
+    const {
+      feature,
+      manager,
+      context = "",
+      taskId,
+      readOnly = false,
+    } = this.scope(featureId);
     const record = {
       turn,
       run: null,
@@ -77,6 +91,31 @@ export class Conversations {
       )
         return;
       try {
+        if (event.type === "question") {
+          if (!this.options.onQuestions || readOnly) return null;
+          try {
+            const published = this.options.onQuestions(feature, turn, event);
+            Object.assign(block("question-" + event.requestId, "activity"), {
+              title: "Decision recorded in Needs you",
+              text:
+                "Task ID: " +
+                published.taskId +
+                "\nQuestions: " +
+                published.ids.join("\n"),
+              status: "recorded",
+            });
+            changed();
+            return published;
+          } catch (e) {
+            Object.assign(block("question-" + event.requestId, "activity"), {
+              title: "Could not publish decision request",
+              text: e.message,
+              status: "failed",
+            });
+            changed();
+            return { error: e.message };
+          }
+        }
         if (event.type === "session") {
           this.chat.setSession(featureId, manager.provider, event.id);
           return;
@@ -121,6 +160,11 @@ export class Conversations {
           });
         }
         if (event.type === "approval") {
+          if (readOnly) {
+            turn.error = "This discussion cannot grant tool permissions.";
+            record.run?.stop();
+            return;
+          }
           record.pending.set(event.id, event.rpcId);
           Object.assign(block(event.id + "-approval", "approval"), {
             requestId: event.id,
@@ -163,15 +207,22 @@ export class Conversations {
       env: {
         ...process.env,
         PATH: path.join(project, "bin") + path.delimiter + process.env.PATH,
-        SOULL_FEATURE_ID: featureId,
+        SOULL_FEATURE_ID: feature.id,
+        SOULL_MANAGER_ID: manager.id,
+        ...(taskId
+          ? { SOULL_TASK_ID: taskId, SOULL_QUESTION_ID: featureId }
+          : {}),
         SOULL_WORKSPACE: feature.workspace,
         SOULL_RUNTIME_FILE: this.runtimeFile,
       },
       emit,
+      readOnly,
     });
-    Promise.resolve(record.run.start(turn.prompt)).catch((e) =>
-      emit({ type: "done", status: "failed", error: e.message }),
-    );
+    Promise.resolve(
+      record.run.start(
+        context ? context + "\n\nUser message:\n" + turn.prompt : turn.prompt,
+      ),
+    ).catch((e) => emit({ type: "done", status: "failed", error: e.message }));
   }
   cancel(featureId, id) {
     const turn = this.chat.get(id);

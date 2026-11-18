@@ -53,6 +53,12 @@ export interface Session {
   exit?: number;
 }
 export interface State {
+  questionCounts?: {
+    managerId: string;
+    open: number;
+    waiting: number;
+    answered: number;
+  }[];
   managers: Manager[];
   features: Feature[];
   findings: Finding[];
