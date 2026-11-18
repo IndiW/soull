@@ -36,7 +36,7 @@ export function jsonLines(stream, onMessage, onError) {
   });
 }
 const instructions = (name) =>
-  `You are ${name}, the user's persistent manager in Soull. Lead with the outcome, use readable Markdown, and put supporting details after the answer. Coordinate developers yourself; communicate directly with the user. Publish durable findings with soull when useful (run soull help). File links must be workspace-relative Markdown links, optionally :line. Do not claim tools or tests ran without evidence.`;
+  `You are ${name}, the user's persistent manager in Soull. Lead with the outcome, use readable Markdown, and put supporting details after the answer. Coordinate developers yourself; communicate directly with the user. Publish durable findings with soull when useful (run soull help). Delegate implementation and investigation to your provider's subagents; keep manager turns brief and available for new requests. For user decisions, use soull task create and soull question create with a task ID, stage, context, reason, recommendation and optional choices. Never bury a decision solely in chat. Do not wait or poll for answers in a manager turn: publish the question and continue other work or finish the turn. Task agents retrieve their answers with soull question inbox --task ID and explicitly acknowledge the exact answer version with soull question ack. Only the user's explicit Answer control is a decision; discussion messages are exploration. File links must be workspace-relative Markdown links, optionally :line. Do not claim tools or tests ran without evidence.`;
 
 // Preserve the CLI's own sign-in, subscription and configuration. No token handling.
 export function providerRun({
@@ -153,6 +153,24 @@ export function providerRun({
           }
           const p = msg.params || {};
           if (msg.id !== undefined && msg.method) {
+            if (msg.method === "item/tool/requestUserInput" && !readOnly) {
+              const published = emit({
+                type: "question",
+                requestId: msg.id,
+                source: p.threadId || "manager",
+                questions: p.questions,
+              });
+              write({
+                id: msg.id,
+                error: {
+                  code: -32000,
+                  message: published?.ids
+                    ? `Decision request recorded in Soull Needs you (${published.ids.join(", ")}). This is not a user answer. Read the task mailbox for explicit replies; do not infer a decision. Keep the manager available: continue other work or finish this turn. The task must read soull question inbox --task ${published.taskId} and acknowledge the exact answer version once used.`
+                    : `This question could not be recorded: ${published?.error || "use soull question create"}. Publish it through the Soull CLI; do not bury the question only in chat.`,
+                },
+              });
+              return;
+            }
             if (
               [
                 "item/commandExecution/requestApproval",
@@ -183,7 +201,7 @@ export function providerRun({
                 error: {
                   code: -32601,
                   message:
-                    "This request is not supported by Soull. Ask the user in your next message.",
+                    "This interaction is not supported by Soull. Publish any decision request with soull question create so it remains visible in Needs you.",
                 },
               });
               emit({
@@ -285,7 +303,20 @@ export function providerRun({
       jsonLines(
         child.stdout,
         (msg) => {
-          if (done || msg.parent_tool_use_id) return; // Developers report via the manager, not as user-facing chat.
+          if (done) return;
+          if (msg.parent_tool_use_id) {
+            // Keep developer prose out of the manager chat while retaining structured decision requests.
+            if (!readOnly && msg.type === "assistant")
+              for (const b of msg.message?.content || [])
+                if (b.type === "tool_use" && b.name === "AskUserQuestion")
+                  emit({
+                    type: "question",
+                    requestId: b.id,
+                    source: msg.parent_tool_use_id,
+                    questions: b.input?.questions,
+                  });
+            return;
+          }
           if (msg.session_id) emit({ type: "session", id: msg.session_id });
           if (msg.type === "stream_event") {
             const e = msg.event || {};
@@ -321,6 +352,17 @@ export function providerRun({
                   id: `${messageId}:${index}`,
                   text: block.text,
                   group: messageId,
+                });
+              if (
+                block.type === "tool_use" &&
+                block.name === "AskUserQuestion" &&
+                !readOnly
+              )
+                emit({
+                  type: "question",
+                  requestId: block.id,
+                  source: "manager",
+                  questions: block.input?.questions,
                 });
               if (block.type === "tool_use")
                 emit({

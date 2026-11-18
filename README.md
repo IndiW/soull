@@ -70,12 +70,54 @@ Workspace terminals include the `soull` command, `SOULL_FEATURE_ID`, and a refer
 ```sh
 soull help
 soull finding create --title "Investigation complete" --body-file findings.md
-soull finding create --kind question --title "Choose rollout approach" --body-file question.md
 ```
 
 The body file is read on the CLI side. Other kinds: `answer`, `follow-up`. Results are JSON with durable IDs. Findings appear in Inbox and in the feature's Briefings. Marking an item read is separate from resolving it. Explicit Markdown links such as `[service](src/service.ts:42)` open the corresponding workspace file in Soull. Only relative file links are recognized.
 
-In this slice, tell external-repository agents to use `soull help`; Soull does not rewrite the repository's agent instruction files. Soull's own AGENTS.md includes the reporting guidance. Full coordinator startup/remit injection is a follow-up.
+In this slice, tell external-repository agents to use `soull help`; Soull does not rewrite the repository's agent instruction files. Soull's own AGENTS.md includes the reporting guidance, and structured manager turns receive the question/delegation protocol. External Terminal agents still need explicit reporting instructions.
+
+### Needs you: durable task questions
+
+Open a manager’s **Needs you** tray to review questions across its tasks and features. **Waiting on you**, **Can continue**, and **Needed later** describe when a decision matters. Quick choices and custom replies use the same explicit Answer action. Discussion is exploration: each question has its own read-only provider conversation, isolated from the main manager turn, and discussing never submits a decision. Answer and discussion drafts persist in browser-local storage.
+
+The lifecycle is **Open → Answered → Applied**. Submitting an answer writes a durable task mailbox entry without waiting for the main chat queue or starting a model call. **Answered** means the agent has not acknowledged that version. **Applied** means the owning task explicitly acknowledged the exact answer version it received/used; it is an agent declaration, not verified code execution. Updated answers get immutable versions. Stale question revisions and acknowledgments from the wrong task or for superseded answers are rejected; repeated answer request IDs are idempotent.
+
+Defer an open question until a time or an exact task milestone; this postpones attention without resolving it. Timed reminders return on the next read/poll. Milestones are scoped to the owning task. Dismiss or reopen questions explicitly; Applied and dismissed history loads in pages of 30, ordered by completion, including newly completed questions while older pages are open. SQLite retains questions, answer history and discussions across restarts; browser/webview drafts and view preferences remain local.
+
+Publish questions through the CLI rather than burying decisions in chat:
+
+```sh
+soull task create --title "Choose rollout approach"
+# Use the returned task ID below.
+soull question create --task TASK_ID --body-file question.json
+soull question list --manager MANAGER_ID
+soull question show QUESTION_ID
+soull question inbox --task TASK_ID
+# Only after this task has received/used the exact returned answerVersion:
+soull question ack QUESTION_ID --task TASK_ID --answer-version 1
+# For an open question, use its latest revision from question show:
+soull question stage OPEN_QUESTION_ID --task TASK_ID --stage waiting --revision REVISION
+soull question milestone --task TASK_ID --name "Implementation ready"
+```
+
+`question.json` contains:
+
+```json
+{
+  "title": "Which rollout approach?",
+  "context": "The implementation supports either approach.",
+  "reason": "The choice determines rollout work.",
+  "recommendation": "Start with a small cohort.",
+  "stage": "can-continue",
+  "choices": [{ "id": "cohort", "label": "Small cohort", "recommended": true }]
+}
+```
+
+Workspace commands receive `SOULL_FEATURE_ID`, `SOULL_MANAGER_ID` and the local runtime reference; `question list` defaults to `SOULL_MANAGER_ID`. Task commands accept `SOULL_TASK_ID` as a task default. New questions allow at most five choices and 12,000 context characters, with at most 200 unresolved questions per manager. Lists omit full context; details load separately. Earlier `finding --kind question` records are adopted once while preserving the original finding; resolved legacy findings become dismissed, never Applied. All legacy questions remain accessible even above the new-authoring cap.
+
+Task records route decisions; they do not schedule autonomous workers. Manager chat turns remain serialized per feature. Manager instructions ask the provider to delegate through native subagents, publish durable questions, then continue other work or finish the turn instead of waiting. Task agents retrieve their mailboxes independently; the next manager turn receives pending-answer routing metadata, including the native worker source when available. Delivery and acknowledgment still require agent cooperation.
+
+Supported native Codex `item/tool/requestUserInput` requests and structured Claude `AskUserQuestion` requests are captured as durable questions. Codex receives an explicit error explaining that capture is not a user answer and directing the task to its mailbox. Native requests retain their source (Codex thread or Claude parent tool), so retries within a turn are deduplicated without merging distinct workers. Claude child question requests are captured while child prose stays out of the manager transcript. The CLI remains the explicit fallback for unsupported requests; workflow state is never inferred from terminal scraping. Provider permissions and sign-in remain with the installed CLIs.
 
 ### Iterate without losing sessions
 
@@ -111,7 +153,7 @@ npm run test:browser
 node tests/browser/reviews.mjs
 ```
 
-Alternatively set `SOULL_BROWSER_BINARY` to an installed Chromium binary. Conversation checks cover Markdown, streamed replies, queued follow-ups, Stop, draft recovery, multi-page reading-anchor restoration and desktop/compact layout. The Guided diff fixture covers generation, per-file guidance, deleted files, unsaved edit guards, staleness, regeneration, reload, failed-output recovery and revision context in preserved Conversation drafts. [Review unit/service tests](tests/reviews.test.mjs) cover snapshot fingerprints, schema validation, cancellation and durable recovery; [provider tests](tests/providers.test.mjs) exercise synthetic transports. These fixtures do not validate real signed-in subscription inference. Local screenshots go in `.impeccable/review/` and are ignored by Git.
+Alternatively set `SOULL_BROWSER_BINARY` to an installed Chromium binary. The Needs you fixture covers manager-wide grouping, quick/custom answers, drafts, discussion isolation, deferral, history and compact layout. Conversation checks cover Markdown, streamed replies, queued follow-ups, Stop, draft recovery, multi-page reading-anchor restoration and desktop/compact layout. The Guided diff fixture covers generation, per-file guidance, deleted files, unsaved edit guards, staleness, regeneration, reload, failed-output recovery and revision context in preserved Conversation drafts. [Review unit/service tests](tests/reviews.test.mjs) cover snapshot fingerprints, schema validation, cancellation and durable recovery; [provider tests](tests/providers.test.mjs) exercise synthetic transports. These fixtures do not validate real signed-in subscription inference. Local screenshots go in `.impeccable/review/` and are ignored by Git.
 
 Before relying on subscription-backed work on your Mac, sign in to each CLI, send a message and follow-up through a manager configured for that provider, reload during a reply, and exercise its permission flow. These live checks remain outstanding.
 

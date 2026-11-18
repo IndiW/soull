@@ -303,17 +303,24 @@ export function Conversation({
   briefings,
   openTerminal,
   findingFocus,
+  endpoint,
+  storageScope,
+  compact = false,
 }: {
   feature: Feature;
   manager: Manager;
+  endpoint?: string;
+  storageScope?: string;
+  compact?: boolean;
   openFile: (path: string, line: number) => void;
   onCopySelection: () => void;
   briefings: ReactNode;
   findingFocus?: string | null;
   openTerminal: () => void;
 }) {
-  const base = "/features/" + feature.id + "/conversation";
-  const key = "soull-chat-" + feature.id;
+  const base = endpoint || "/features/" + feature.id + "/conversation";
+  const key = storageScope || "soull-chat-" + feature.id;
+  const inputId = "chat-message-" + (storageScope || feature.id);
   const [turns, setTurns] = useState<Turn[]>([]),
     [draft, setDraft] = useState(
       () => localStorage.getItem(key + "-draft") || "",
@@ -560,19 +567,25 @@ export function Conversation({
   return (
     <section
       className="rich-conversation"
-      aria-label={`Conversation with ${manager.name}`}
+      aria-label={
+        compact
+          ? `Question discussion with ${manager.name}`
+          : `Conversation with ${manager.name}`
+      }
     >
-      <header className="chat-heading">
-        <Robot name={manager.name} size={34} />
-        <div>
-          <h2>{manager.name}</h2>
-          <p>
-            {manager.provider === "codex" ? "Codex" : "Claude Code"} ·{" "}
-            {feature.title}
-          </p>
-        </div>
-        <button onClick={openTerminal}>Open terminal</button>
-      </header>
+      {!compact && (
+        <header className="chat-heading">
+          <Robot name={manager.name} size={34} />
+          <div>
+            <h2>{manager.name}</h2>
+            <p>
+              {manager.provider === "codex" ? "Codex" : "Claude Code"} ·{" "}
+              {feature.title}
+            </p>
+          </div>
+          <button onClick={openTerminal}>Open terminal</button>
+        </header>
+      )}
       <div
         ref={scroll}
         className="chat-scroll"
@@ -612,17 +625,23 @@ export function Conversation({
           )}
           {loaded && !turns.length && (
             <div className="chat-empty">
-              <h2>A conversation you can come back to.</h2>
+              <h2>
+                {compact
+                  ? "Explore this decision."
+                  : "A conversation you can come back to."}
+              </h2>
               <p>
-                Ask {manager.name} about this feature, explore an approach, or
-                start the work. Your replies and findings stay with this
-                workspace.
+                {compact
+                  ? `Talk through the tradeoffs with ${manager.name}. Return to the question when you’re ready to give an answer.`
+                  : `Ask ${manager.name} about this feature, explore an approach, or start the work. Your replies and findings stay with this workspace.`}
               </p>
-              <p className="muted">
-                Sign in with your subscription in the installed{" "}
-                {manager.provider === "codex" ? "Codex" : "Claude Code"} CLI
-                first. Soull uses that CLI’s authentication and permissions.
-              </p>
+              {!compact && (
+                <p className="muted">
+                  Sign in with your subscription in the installed{" "}
+                  {manager.provider === "codex" ? "Codex" : "Claude Code"} CLI
+                  first. Soull uses that CLI’s authentication and permissions.
+                </p>
+              )}
             </div>
           )}
           {turns.map((turn) => (
@@ -639,13 +658,15 @@ export function Conversation({
               retry={retry}
             />
           ))}
-          <details
-            className="chat-briefings"
-            open={findingFocus ? true : undefined}
-          >
-            <summary>Durable findings and questions</summary>
-            {briefings}
-          </details>
+          {!compact && (
+            <details
+              className="chat-briefings"
+              open={findingFocus ? true : undefined}
+            >
+              <summary>Durable findings and questions</summary>
+              {briefings}
+            </details>
+          )}
         </div>
       </div>
       {away && (
@@ -674,11 +695,11 @@ export function Conversation({
               send();
             }}
           >
-            <label className="sr-only" htmlFor="chat-message">
+            <label className="sr-only" htmlFor={inputId}>
               Message {manager.name}
             </label>
             <textarea
-              id="chat-message"
+              id={inputId}
               ref={input}
               value={draft}
               maxLength={30000}

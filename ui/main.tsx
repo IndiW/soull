@@ -12,6 +12,7 @@ import { Robot } from "./Robot";
 import { Terminal } from "./Terminal";
 import { Review } from "./Review";
 import { Conversation } from "./Conversation";
+import { NeedsYou } from "./NeedsYou";
 import "./style.css";
 type Tab = "map" | "conversation" | "terminal" | "review" | "code";
 const empty: State = { managers: [], features: [], findings: [], sessions: [] };
@@ -34,6 +35,7 @@ function App() {
     [dirty, setDirty] = useState(false),
     [copied, setCopied] = useState(false),
     [selectedFinding, setSelectedFinding] = useState<string | null>(null),
+    [questionFocusVersion, setQuestionFocusVersion] = useState(0),
     [copySelection, setCopySelection] = useState(
       localStorage.getItem("soull-copy") !== "false",
     ),
@@ -169,6 +171,7 @@ function App() {
     setInbox(false);
     setTab("conversation");
     setSelectedFinding(f.id);
+    setQuestionFocusVersion((v) => v + 1);
     setDirty(false);
     patchFinding(f, { isRead: true });
   }
@@ -199,6 +202,34 @@ function App() {
           <span className="dev-tag">DEV</span>
         </div>
         <span className="global-note">A little space for big ideas.</span>
+        <button
+          className="inbox-button"
+          onClick={() => {
+            if (!allowSwitch()) return;
+            const counts = data.questionCounts || [];
+            const target =
+              counts.find((c) => c.managerId === manager?.id && c.open > 0) ||
+              counts.find((c) => c.waiting > 0) ||
+              counts.find((c) => c.open > 0) ||
+              counts.find((c) => c.answered > 0);
+            if (target) {
+              setManagerId(target.managerId);
+              setFeatureId(
+                data.features.find((f) => f.managerId === target.managerId)
+                  ?.id || "",
+              );
+            }
+            setTab("conversation");
+            setInbox(false);
+            setDirty(false);
+            setSelectedFinding(null);
+          }}
+        >
+          Needs you{" "}
+          <span className="count">
+            {(data.questionCounts || []).reduce((n, c) => n + c.open, 0)}
+          </span>
+        </button>
         <button
           className={"inbox-button " + (inbox ? "selected" : "")}
           onClick={() => {
@@ -545,80 +576,115 @@ function App() {
                 }}
               />
             ) : tab === "conversation" ? (
-              <Conversation
-                key={feature.id}
-                feature={feature}
-                manager={manager}
-                openFile={openFile}
-                onCopySelection={copyText}
-                findingFocus={selectedFinding}
-                openTerminal={() => navigate("terminal")}
-                briefings={
-                  <section className="conversation">
-                    <div className="briefing-heading">
-                      <Robot name={manager.name} size={48} />
-                      <div>
-                        <h2>{manager.name}’s briefings</h2>
-                        <p className="muted">
-                          Findings and questions published by your coordinator.
-                        </p>
-                      </div>
-                      <button onClick={() => navigate("terminal")}>
-                        Open terminal ↗
-                      </button>
-                    </div>
-                    {findings.length ? (
-                      findings.map((f) => (
-                        <article
-                          className="finding"
-                          key={f.id}
-                          id={"finding-" + f.id}
-                        >
-                          <div className="finding-meta">
-                            <span>{f.kind}</span>
-                            <time>{new Date(f.created).toLocaleString()}</time>
-                            {!f.isRead && (
-                              <span className="unread-label">Unread</span>
-                            )}
-                          </div>
-                          <h2>{f.title}</h2>
-                          <FindingBody body={f.body} openFile={openFile} />
-                          <div className="finding-actions">
-                            <button
-                              onClick={() =>
-                                patchFinding(f, { isRead: !f.isRead })
-                              }
-                            >
-                              {f.isRead ? "Mark unread" : "Mark read"}
-                            </button>
-                            <button
-                              onClick={() =>
-                                patchFinding(f, { resolved: !f.resolved })
-                              }
-                            >
-                              {f.resolved ? "✓ Resolved" : "Resolve"}
-                            </button>
-                          </div>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="empty">
-                        <h2>Keep the useful parts.</h2>
-                        <p>
-                          Ask your coordinator to publish a finding with the{" "}
-                          <code>soull</code> CLI.
-                          <br />
-                          It stays here even as the conversation moves on.
-                        </p>
-                        <code>soull help</code>
+              <div className="conversation-workspace">
+                <Conversation
+                  key={feature.id}
+                  feature={feature}
+                  manager={manager}
+                  openFile={openFile}
+                  onCopySelection={copyText}
+                  findingFocus={selectedFinding}
+                  openTerminal={() => navigate("terminal")}
+                  briefings={
+                    <section className="conversation">
+                      <div className="briefing-heading">
+                        <Robot name={manager.name} size={48} />
+                        <div>
+                          <h2>{manager.name}’s briefings</h2>
+                          <p className="muted">
+                            Findings and questions published by your
+                            coordinator.
+                          </p>
+                        </div>
                         <button onClick={() => navigate("terminal")}>
-                          Go to terminal
+                          Open terminal ↗
                         </button>
                       </div>
-                    )}
-                  </section>
-                }
-              />
+                      {findings.length ? (
+                        findings.map((f) => (
+                          <article
+                            className="finding"
+                            key={f.id}
+                            id={"finding-" + f.id}
+                          >
+                            <div className="finding-meta">
+                              <span>{f.kind}</span>
+                              <time>
+                                {new Date(f.created).toLocaleString()}
+                              </time>
+                              {!f.isRead && (
+                                <span className="unread-label">Unread</span>
+                              )}
+                            </div>
+                            <h2>{f.title}</h2>
+                            <FindingBody body={f.body} openFile={openFile} />
+                            <div className="finding-actions">
+                              <button
+                                onClick={() =>
+                                  patchFinding(f, { isRead: !f.isRead })
+                                }
+                              >
+                                {f.isRead ? "Mark unread" : "Mark read"}
+                              </button>
+                              {f.kind === "question" ? (
+                                <button
+                                  onClick={() => {
+                                    setSelectedFinding(f.id);
+                                    setQuestionFocusVersion((v) => v + 1);
+                                  }}
+                                >
+                                  Answer in Needs you
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() =>
+                                    patchFinding(f, { resolved: !f.resolved })
+                                  }
+                                >
+                                  {f.resolved ? "✓ Resolved" : "Resolve"}
+                                </button>
+                              )}
+                            </div>
+                          </article>
+                        ))
+                      ) : (
+                        <div className="empty">
+                          <h2>Keep the useful parts.</h2>
+                          <p>
+                            Ask your coordinator to publish a finding with the{" "}
+                            <code>soull</code> CLI.
+                            <br />
+                            It stays here even as the conversation moves on.
+                          </p>
+                          <code>soull help</code>
+                          <button onClick={() => navigate("terminal")}>
+                            Go to terminal
+                          </button>
+                        </div>
+                      )}
+                    </section>
+                  }
+                />
+                <NeedsYou
+                  key={manager.id}
+                  manager={manager}
+                  features={data.features}
+                  focusVersion={questionFocusVersion}
+                  focusId={
+                    findings.find((f) => f.id === selectedFinding)?.kind ===
+                    "question"
+                      ? selectedFinding
+                      : null
+                  }
+                  onCopySelection={copyText}
+                  openFile={(featureId, path, line) => {
+                    if (!allowSwitch()) return;
+                    setFeatureId(featureId);
+                    setFileLink({ path, line });
+                    setTab("code");
+                  }}
+                />
+              </div>
             ) : (
               <section className="map-view">
                 <div className="map-caption">

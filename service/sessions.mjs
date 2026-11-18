@@ -54,6 +54,7 @@ export class Sessions {
           COLORTERM: "truecolor",
           SOULL_RUNTIME_FILE: this.runtimeFile,
           SOULL_FEATURE_ID: feature.id,
+          SOULL_MANAGER_ID: feature.managerId,
           SOULL_WORKSPACE: feature.workspace,
         },
         stdio: ["pipe", "pipe", "pipe"],
